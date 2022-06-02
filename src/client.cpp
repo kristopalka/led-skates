@@ -15,13 +15,12 @@ IPAddress subnet(255, 255, 255, 0);
 char packetBuffer[UDP_TX_PACKET_MAX_SIZE];
 
 // FastLED
-#define LED_NUM 1
+#define LED_NUM 14
 #define LED_PIN D3
 
 CRGB leds[LED_NUM];
 
 void setup() {
-    pinMode(D4, INPUT);
     Serial.begin(74880);
     Serial.println("-------------------------");
 
@@ -59,5 +58,5 @@ void loop() {
     FastLED.show();
     Serial.println((int)packetBuffer[0]);
 
-    delay(50);
+    delay(10);
 }
