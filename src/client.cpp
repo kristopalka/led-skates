@@ -8,8 +8,8 @@
 #define UDP_PORT 8080
 
 WiFiUDP UDP;
-IPAddress local_IP(192, 168, 4, 2);
-IPAddress gateway(192, 168, 4, 1);
+IPAddress client_IP(192, 168, 100, 2);
+IPAddress gateway(192, 168, 100, 1);
 IPAddress subnet(255, 255, 255, 0);
 
 char packetBuffer[UDP_TX_PACKET_MAX_SIZE];
@@ -27,7 +27,7 @@ void setup() {
     WiFi.begin(AP_SSID, AP_PASS);
     WiFi.mode(WIFI_STA);
 
-    if (!WiFi.config(local_IP, gateway, subnet)) {
+    if (!WiFi.config(client_IP, gateway, subnet)) {
         Serial.println("STA Failed to configure");
     }
 
