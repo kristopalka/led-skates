@@ -1,10 +1,12 @@
+#define MODE SERVER  // mode san be SERVER or CLIENT
+
+// #define min(a, b) ((a) < (b) ? (a) : (b))
+// #define max(a, b) ((a) > (b) ? (a) : (b))
+
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 #include <WS2812FX.h>
 #include <WiFiUdp.h>
-
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#define max(a, b) ((a) > (b) ? (a) : (b))
 
 #include "web/arg.cpp"
 #include "web/index.html.cpp"
@@ -15,54 +17,65 @@
 #define HTTP_PORT 80
 #define UDP_PORT 8080
 
+#define LED_PIN D3
+#define LED_COUNT 14
+
 IPAddress host_ip(192, 168, 100, 1);
 IPAddress client_ip(192, 168, 100, 2);
 IPAddress gateway(192, 168, 100, 1);
 IPAddress subnet(255, 255, 255, 0);
 
-#define LED_PIN D3
-#define LED_COUNT 14
-
 unsigned long auto_last_change = 0;
 unsigned long last_wifi_check_time = 0;
-String modes_html = "";
+String html_modes = "";
 bool auto_cycle = false;
 
 WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 ESP8266WebServer server(HTTP_PORT);
+WiFiUDP UDP;
+char packetBuffer[UDP_TX_PACKET_MAX_SIZE];
 
-void modes_setup();
+void html_modes_setup();
 void leds_setup();
-void wifi_setup();
-void server_setup();
+void wifi_AP_setup();
+void web_server_setup();
+void wifi_server_setup();
+void wifi_client_setup();
+void receive_packet();
 void handle_auto_mode();
+void change_mode(Arg arg);
 void srv_handle_not_found();
 void srv_handle_index_html();
 void srv_handle_main_js();
 void srv_handle_modes();
 void srv_handle_set();
-void change_mode(Arg arg);
 
 ////////////////////////////////////////////// SETUP //////////////////////////////////////////////
 void setup() {
     Serial.begin(74880);
     delay(500);
 
-    modes_setup();
     leds_setup();
-    wifi_setup();
-    server_setup();
+#if MODE == SERVER
+    html_modes_setup();
+    web_server_setup();
+    wifi_server_setup();
+#elif
+    wifi_client_setup();
+#endif
+
+    UDP.begin(UDP_PORT);
 }
 
-void modes_setup() {
-    modes_html.reserve(5000);
+void html_modes_setup() {
+    html_modes.reserve(5000);
 
-    modes_html = "";
+    html_modes = "";
     uint8_t num_modes = ws2812fx.getModeCount();
     for (uint8_t i = 0; i < num_modes; i++) {
-        modes_html += "<li><a href='#'>";
-        modes_html += ws2812fx.getModeName(i);
-        modes_html += "</a></li>";
+        html_modes += "<li><a href='#'>";
+        html_modes += ws2812fx.getModeName(i);
+        html_modes += "</a></li>";
     }
 }
 
@@ -77,7 +90,7 @@ void leds_setup() {
     ws2812fx.start();
 }
 
-void wifi_setup() {
+void wifi_server_setup() {
     Serial.println("Wifi setup");
     Serial.println("Starting access point...");
     WiFi.softAPConfig(host_ip, gateway, subnet);
@@ -93,7 +106,20 @@ void wifi_setup() {
     }
 }
 
-void server_setup() {
+void wifi_client_setup() {
+    Serial.println("Wifi setup");
+    Serial.print("Connecting to ");
+    Serial.print(WIFI_SSID);
+
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.print("\nConnected! IP address: ");
+    Serial.println(WiFi.localIP());
+}
+
+void web_server_setup() {
     Serial.println("HTTP server setup");
 
     server.on("/", srv_handle_index_html);
@@ -110,10 +136,21 @@ void server_setup() {
 ////////////////////////////////////////////// LOOP //////////////////////////////////////////////
 
 void loop() {
+#if MODE == SERVER
     server.handleClient();
     ws2812fx.service();
-
+#elif
+    receive_packet();
+#endif
     handle_auto_mode();
+}
+
+void receive_packet() {
+    UDP.parsePacket();
+    UDP.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
+
+    Arg arg(packetBuffer);
+    change_mode(arg);
 }
 
 void handle_auto_mode() {
@@ -127,32 +164,6 @@ void handle_auto_mode() {
         Serial.println(ws2812fx.getModeName(ws2812fx.getMode()));
         auto_last_change = now;
     }
-}
-
-////////////////////////////////////////////// Webserver Functions //////////////////////////////////////////////
-
-void srv_handle_not_found() {
-    server.send(404, "text/plain", "File Not Found");
-}
-
-void srv_handle_index_html() {
-    server.send_P(200, "text/html", index_html);
-}
-
-void srv_handle_main_js() {
-    server.send_P(200, "application/javascript", main_js);
-}
-
-void srv_handle_modes() {
-    server.send(200, "text/plain", modes_html);
-}
-
-void srv_handle_set() {
-    for (uint8_t i = 0; i < server.args(); i++) {
-        Arg arg(server.argName(i), server.arg(i));
-        change_mode(arg);
-    }
-    server.send(200, "text/plain", "OK");
 }
 
 void change_mode(Arg arg) {
@@ -176,8 +187,7 @@ void change_mode(Arg arg) {
         if (arg.value.c_str()[0] == '-') {
             ws2812fx.setBrightness(ws2812fx.getBrightness() * 0.8);
         } else if (arg.value.c_str()[0] == ' ') {
-            ws2812fx.setBrightness(
-                min(max(ws2812fx.getBrightness(), 5) * 1.2, 255));
+            ws2812fx.setBrightness(min((int)(max(ws2812fx.getBrightness(), (uint8_t)5) * 1.2), 255));
         } else {  // set brightness directly
             uint8_t tmp = (uint8_t)strtol(arg.value.c_str(), NULL, 10);
             ws2812fx.setBrightness(tmp);
@@ -188,7 +198,7 @@ void change_mode(Arg arg) {
 
     if (arg.key == "s") {
         if (arg.value.c_str()[0] == '-') {
-            ws2812fx.setSpeed(max(ws2812fx.getSpeed(), 5) * 1.2);
+            ws2812fx.setSpeed(max(ws2812fx.getSpeed(), (uint16_t)5) * 1.2);
         } else if (arg.value.c_str()[0] == ' ') {
             ws2812fx.setSpeed(ws2812fx.getSpeed() * 0.8);
         } else {
@@ -207,4 +217,37 @@ void change_mode(Arg arg) {
             auto_last_change = 0;
         }
     }
+}
+
+////////////////////////////////////////////// Webserver Functions //////////////////////////////////////////////
+
+void srv_handle_not_found() {
+    server.send(404, "text/plain", "File Not Found");
+}
+
+void srv_handle_index_html() {
+    server.send_P(200, "text/html", index_html);
+}
+
+void srv_handle_main_js() {
+    server.send_P(200, "application/javascript", main_js);
+}
+
+void srv_handle_modes() {
+    server.send(200, "text/plain", html_modes);
+}
+
+void srv_handle_set() {
+    for (uint8_t i = 0; i < server.args(); i++) {
+        Arg arg(server.argName(i), server.arg(i));
+
+        UDP.beginPacket(client_ip, UDP_PORT);
+        UDP.write(arg.toString().c_str());
+        UDP.endPacket();
+
+        delay(10);
+
+        change_mode(arg);
+    }
+    server.send(200, "text/plain", "OK");
 }
