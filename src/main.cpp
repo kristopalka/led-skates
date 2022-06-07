@@ -1,8 +1,3 @@
-#define MODE SERVER  // mode san be SERVER or CLIENT
-
-// #define min(a, b) ((a) < (b) ? (a) : (b))
-// #define max(a, b) ((a) > (b) ? (a) : (b))
-
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 #include <WS2812FX.h>
@@ -12,10 +7,13 @@
 #include "web/index.html.cpp"
 #include "web/main.js.cpp"
 
+#define IS_SERVER false  // mode san be SERVER or CLIENT
+
 #define WIFI_SSID "LedSkates"
 #define WIFI_PASSWORD "1234567890"
 #define HTTP_PORT 80
 #define UDP_PORT 8080
+#define UDP_MAX_LENGTH 255
 
 #define LED_PIN D3
 #define LED_COUNT 14
@@ -33,7 +31,7 @@ bool auto_cycle = false;
 WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 ESP8266WebServer server(HTTP_PORT);
 WiFiUDP UDP;
-char packetBuffer[UDP_TX_PACKET_MAX_SIZE];
+char packetBuffer[UDP_MAX_LENGTH];
 
 void html_modes_setup();
 void leds_setup();
@@ -55,15 +53,14 @@ void setup() {
     Serial.begin(74880);
     delay(500);
 
-    leds_setup();
-#if MODE == SERVER
+#if IS_SERVER == true
     html_modes_setup();
     web_server_setup();
     wifi_server_setup();
-#elif
+#else
     wifi_client_setup();
 #endif
-
+    leds_setup();
     UDP.begin(UDP_PORT);
 }
 
@@ -80,77 +77,92 @@ void html_modes_setup() {
 }
 
 void leds_setup() {
-    Serial.println("WS2812FX setup");
+    Serial.print("WS2812FX setup > ");
 
     ws2812fx.init();
     ws2812fx.setMode(FX_MODE_STATIC);
-    ws2812fx.setColor(0xFF5900);
+    ws2812fx.setColor(0x00ff00);
     ws2812fx.setSpeed(1000);
     ws2812fx.setBrightness(128);
     ws2812fx.start();
+
+    Serial.println("finish!");
 }
 
 void wifi_server_setup() {
-    Serial.println("Wifi setup");
-    Serial.println("Starting access point...");
+    Serial.print("Wifi setup > ");
+    Serial.print("starting access point > ");
     WiFi.softAPConfig(host_ip, gateway, subnet);
 
     bool success = WiFi.softAP(WIFI_SSID, WIFI_PASSWORD);
     if (success) {
-        Serial.println("Success!");
-        Serial.println(WiFi.softAPIP());
+        Serial.print(WiFi.softAPIP());
+        Serial.println(" > success!");
     } else {
-        Serial.println("Failed. Resetting...");
+        Serial.println("failed. Resetting...");
         delay(1000);
         ESP.reset();
     }
 }
 
 void wifi_client_setup() {
-    Serial.println("Wifi setup");
-    Serial.print("Connecting to ");
+    Serial.print("Wifi setup > ");
+
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.mode(WIFI_STA);
+
+    if (!WiFi.config(client_ip, gateway, subnet)) {
+        Serial.println("STA Failed to configure");
+        delay(1000);
+        ESP.reset();
+    }
+
+    Serial.print("connecting to AP: ");
     Serial.print(WIFI_SSID);
 
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
     }
-    Serial.print("\nConnected! IP address: ");
+    Serial.print(" > connected! IP address: ");
     Serial.println(WiFi.localIP());
 }
 
 void web_server_setup() {
-    Serial.println("HTTP server setup");
+    Serial.print("HTTP server setup > ");
 
     server.on("/", srv_handle_index_html);
     server.on("/main.js", srv_handle_main_js);
     server.on("/modes", srv_handle_modes);
     server.on("/set", srv_handle_set);
     server.onNotFound(srv_handle_not_found);
-
     server.begin();
 
-    Serial.println("HTTP server started.");
+    Serial.println("started!");
 }
 
 ////////////////////////////////////////////// LOOP //////////////////////////////////////////////
 
 void loop() {
-#if MODE == SERVER
+#if IS_SERVER == true
     server.handleClient();
-    ws2812fx.service();
-#elif
+#else
     receive_packet();
 #endif
+    ws2812fx.service();
     handle_auto_mode();
 }
 
 void receive_packet() {
-    UDP.parsePacket();
-    UDP.read(packetBuffer, UDP_TX_PACKET_MAX_SIZE);
+    if (UDP.parsePacket()) {
+        int len = UDP.read(packetBuffer, UDP_MAX_LENGTH);
+        packetBuffer[len] = 0;
 
-    Arg arg(packetBuffer);
-    change_mode(arg);
+        Arg arg(packetBuffer);
+        change_mode(arg);
+    }
+
+    delay(40);
 }
 
 void handle_auto_mode() {
@@ -167,6 +179,9 @@ void handle_auto_mode() {
 }
 
 void change_mode(Arg arg) {
+    Serial.print("Arg: ");
+    Serial.println(arg.toString());
+
     if (arg.key == "c") {
         uint32_t tmp = (uint32_t)strtol(arg.value.c_str(), NULL, 10);
         if (tmp <= 0xFFFFFF) {

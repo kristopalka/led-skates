@@ -19,7 +19,7 @@ class Arg {
     }
 
     String toString() {
-        return key + delimiter + value;
+        return (key + delimiter + value).c_str();
     }
 
    private:
