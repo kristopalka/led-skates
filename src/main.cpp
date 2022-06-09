@@ -5,7 +5,7 @@
 
 #include "web/arg.cpp"
 
-#define IS_SERVER false  // mode san be SERVER or CLIENT
+#define IS_SERVER true  // mode san be SERVER or CLIENT
 
 #define WIFI_SSID "LedSkates"
 #define WIFI_PASSWORD "1234567890"
@@ -75,7 +75,7 @@ void srv_handle_set() {
         UDP.write(arg.toString().c_str());
         UDP.endPacket();
 
-        delay(330);
+        // delay(330);
 
         change_mode(arg);
     }
@@ -173,6 +173,7 @@ void setup() {
 #else
     wifi_client_setup();
 #endif
+
     UDP.begin(UDP_PORT);
 }
 
