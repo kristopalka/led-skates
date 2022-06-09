@@ -24,5 +24,5 @@ There are many modes for LEDs that you can choose.
 I suggest opening repository as a [PlatformIO](https://platformio.org/) project, and upload it to board using platformio.ini file
 
 ## Sources
-[ESP8266 UDP communication](https://siytek.com/communication-between-two-esp8266/)
-[WS2812FX Web interface](https://github.com/kitesurfer1404/WS2812FX/tree/master/examples/esp8266_webinterface)
+- [ESP8266 UDP communication](https://siytek.com/communication-between-two-esp8266/)
+- [WS2812FX Web interface](https://github.com/kitesurfer1404/WS2812FX/tree/master/examples/esp8266_webinterface)
